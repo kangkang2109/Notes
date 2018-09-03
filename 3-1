@@ -1,0 +1,25 @@
+一 invalidate学习
+因为没有设置mLayoutRequested为true所以不会像RequestLayout()会重新measure和layout，invalidate只会进行draw。
+软件重绘方式
+1.默认情况下，View的clipChildren属性为true，即每个View绘制区域不能超出其父View的范围。如果设置一个页面根布局的clipChildren属性为false，则子View可以超出父View的绘制区域。
+2. 当一个View触发invalidate，clipChildren为true的时候，脏区域就会变成parent的Rect，层层向上直到ViewRootImpl
+如果clipChildren为false，脏区就会与parent的Rect作交集union，最后将赃区域交给ViewRootImpl处理.
+
+硬件重绘方式(默认)
+1. 向上传递调用onDescendantInvalidated并且每个view都设置标记PFLAG_DIRTY，直到viewRootImpl，然后scheduleTraversals
+2. ViewRootImpl重绘的时候会根据设置的标记来进行判断，更新DisplayList，然后交给gpu重新渲染。
+
+二 RelativeLayout测量要点
+1.排序(水平和垂直)
+	就是根据关系排序，优先将关联最少的child放在队列开头，直到将所有child放入再队列中，不能循环依赖，否则会报错
+2.测量(水平和垂直)
+	根据child依赖关系填入params.mLeft 和 params.mRight
+	对view第一次测量(水平)
+	最后根据测量宽度补全params.mLeft 和 params.mRight
+	如果RelativeLayout是wrap_content那么在垂直测量的时候，还会多一条判断，选择每个child最大的params.mRight来确定RelativeLayout最终的宽度
+3.调整
+	如果RelativeLayout是wrap_content，会遍历所有child，如果child含有CENTER_HORIZONTAL或者CENTER_HORIZONTAL，则调整它们的位置。
+
+详见附件
+
+
