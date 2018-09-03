@@ -1,0 +1,169 @@
+DUPLICATE_PARENT_STATE 属性 前提是父类必须可点击
+
+//第一大部分 分发Hotspot点
+1. 点击ViewGroup后,会调用setPressed()
+View
+private void setPressed(boolean pressed, float x, float y) {
+        if (pressed) {
+            drawableHotspotChanged(x, y);		//如果是按下则调用drawableHotspotChanged，进入2
+        }
+
+        setPressed(pressed);				//会调用刷新机制，进入4
+    }
+
+2. drawableHotspotChanged
+View
+public void drawableHotspotChanged(float x, float y) {
+        if (mBackground != null) {
+            mBackground.setHotspot(x, y);
+        }
+        if (mDefaultFocusHighlight != null) {
+            mDefaultFocusHighlight.setHotspot(x, y);
+        }
+        if (mForegroundInfo != null && mForegroundInfo.mDrawable != null) {
+            mForegroundInfo.mDrawable.setHotspot(x, y);
+        }
+
+        dispatchDrawableHotspotChanged(x, y);			//ViewGroup重写了该方法，进入3
+    }
+
+3. dispatchDrawableHotspotChanged
+ViewGroup
+public void dispatchDrawableHotspotChanged(float x, float y) {
+        final int count = mChildrenCount;
+        if (count == 0) {
+            return;
+        }
+
+        final View[] children = mChildren;
+        for (int i = 0; i < count; i++) {
+            final View child = children[i];
+            // Children that are clickable on their own should not
+            // receive hotspots when their parent view does.
+            final boolean nonActionable = !child.isClickable() && !child.isLongClickable();
+            final boolean duplicatesState = (child.mViewFlags & DUPLICATE_PARENT_STATE) != 0;			//检查子View状态
+            if (nonActionable || duplicatesState) {
+                final float[] point = getTempPoint();
+                point[0] = x;
+                point[1] = y;
+                transformPointToViewLocal(point, child);
+                child.drawableHotspotChanged(point[0], point[1]);						//分发给子View
+            }
+        }
+    }
+
+//第二大部分
+刷新DrawableState
+
+4. setPressed（boolean b）
+View
+public void setPressed(boolean pressed) {
+        final boolean needsRefresh = pressed != ((mPrivateFlags & PFLAG_PRESSED) == PFLAG_PRESSED);
+
+        if (pressed) {
+            mPrivateFlags |= PFLAG_PRESSED;
+        } else {
+            mPrivateFlags &= ~PFLAG_PRESSED;
+        }
+
+        if (needsRefresh) {
+            refreshDrawableState();				//刷新drawable，这里就是刷新状态，进入5
+        }
+        dispatchSetPressed(pressed);
+    }
+
+5. refreshDrawableState
+View
+public void refreshDrawableState() {
+        mPrivateFlags |= PFLAG_DRAWABLE_STATE_DIRTY;
+        drawableStateChanged();					// drawable状态变化， 进入6
+
+        ViewParent parent = mParent;
+        if (parent != null) {
+            parent.childDrawableStateChanged(this);
+        }
+    }
+
+6. drawableStateChanged
+ViewGroup
+protected void drawableStateChanged() {
+        super.drawableStateChanged();			//进入View的drawableStateChanged 进入7
+
+        if ((mGroupFlags & FLAG_NOTIFY_CHILDREN_ON_DRAWABLE_STATE_CHANGE) != 0) {
+            if ((mGroupFlags & FLAG_ADD_STATES_FROM_CHILDREN) != 0) {
+                throw new IllegalStateException("addStateFromChildren cannot be enabled if a"
+                        + " child has duplicateParentState set to true");
+            }
+
+            final View[] children = mChildren;
+            final int count = mChildrenCount;
+
+            for (int i = 0; i < count; i++) {
+                final View child = children[i];
+                if ((child.mViewFlags & DUPLICATE_PARENT_STATE) != 0) {
+                    child.refreshDrawableState();		//子View刷新状态
+                }
+            }
+        }
+    }
+
+7. drawableStateChanged
+View 
+protected void drawableStateChanged() {
+        final int[] state = getDrawableState();		//进入8
+        boolean changed = false;
+
+        final Drawable bg = mBackground;
+        if (bg != null && bg.isStateful()) {
+            changed |= bg.setState(state);
+        }
+
+        final Drawable hl = mDefaultFocusHighlight;
+        if (hl != null && hl.isStateful()) {
+            changed |= hl.setState(state);
+        }
+
+        final Drawable fg = mForegroundInfo != null ? mForegroundInfo.mDrawable : null;
+        if (fg != null && fg.isStateful()) {
+            changed |= fg.setState(state);
+        }
+
+        if (mScrollCache != null) {
+            final Drawable scrollBar = mScrollCache.scrollBar;
+            if (scrollBar != null && scrollBar.isStateful()) {
+                changed |= scrollBar.setState(state)
+                        && mScrollCache.state != ScrollabilityCache.OFF;
+            }
+        }
+
+        if (mStateListAnimator != null) {
+            mStateListAnimator.setState(state);
+        }
+
+        if (changed) {
+            invalidate();
+        }
+    }
+
+8. getDrawableState
+View
+public final int[] getDrawableState() {
+        if ((mDrawableState != null) && ((mPrivateFlags & PFLAG_DRAWABLE_STATE_DIRTY) == 0)) {
+            return mDrawableState;
+        } else {
+            mDrawableState = onCreateDrawableState(0);			//进入9
+            mPrivateFlags &= ~PFLAG_DRAWABLE_STATE_DIRTY;
+            return mDrawableState;
+        }
+    }
+
+9. onCreateDrawableState
+View
+protected int[] onCreateDrawableState(int extraSpace) {
+        if ((mViewFlags & DUPLICATE_PARENT_STATE) == DUPLICATE_PARENT_STATE &&
+                mParent instanceof View) {
+            return ((View) mParent).onCreateDrawableState(extraSpace);			
+            //如果子View设置了DUPLICATE_PARENT_STATE，则返回父类的onCreateDrawableState
+        }
+        。。。。
+    }
